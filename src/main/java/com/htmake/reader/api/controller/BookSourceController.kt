@@ -90,7 +90,7 @@ class BookSourceController(coroutineContext: CoroutineContext): BaseController(c
         return bookSourceList
     }
 
-    suspend fun saveSource(context: RoutingContext): ReturnData {
+    suspend fun saveBookSource(context: RoutingContext): ReturnData {
         val returnData = ReturnData()
         if (!checkAuth(context)) {
             return returnData.setData("NEED_LOGIN").setErrorMsg("请登录后使用")
@@ -128,7 +128,7 @@ class BookSourceController(coroutineContext: CoroutineContext): BaseController(c
         return returnData.setData("")
     }
 
-    suspend fun saveSources(context: RoutingContext): ReturnData {
+    suspend fun saveBookSources(context: RoutingContext): ReturnData {
         val returnData = ReturnData()
         if (!checkAuth(context)) {
             return returnData.setData("NEED_LOGIN").setErrorMsg("请登录后使用")
@@ -171,7 +171,7 @@ class BookSourceController(coroutineContext: CoroutineContext): BaseController(c
         return returnData.setData("")
     }
 
-    suspend fun getSource(context: RoutingContext): ReturnData {
+    suspend fun getBookSource(context: RoutingContext): ReturnData {
         val returnData = ReturnData()
         checkAuth(context)
         var bookSourceUrl: String
@@ -181,7 +181,6 @@ class BookSourceController(coroutineContext: CoroutineContext): BaseController(c
         } else {
             // get 请求
             bookSourceUrl = context.queryParam("bookSourceUrl").firstOrNull() ?: ""
-            bookSourceUrl = URLDecoder.decode(bookSourceUrl, "UTF-8")
         }
         if (bookSourceUrl.isNullOrEmpty()) {
             return returnData.setErrorMsg("书源链接不能为空")
@@ -208,7 +207,7 @@ class BookSourceController(coroutineContext: CoroutineContext): BaseController(c
         return returnData.setData(bookSourceList.getJsonObject(existIndex).map)
     }
 
-    suspend fun getSources(context: RoutingContext): ReturnData {
+    suspend fun getBookSources(context: RoutingContext): ReturnData {
         val returnData = ReturnData()
         checkAuth(context)
         var simple: Int = 0
@@ -240,7 +239,7 @@ class BookSourceController(coroutineContext: CoroutineContext): BaseController(c
         return returnData.setData(arrayListOf<Int>())
     }
 
-    suspend fun deleteSource(context: RoutingContext): ReturnData {
+    suspend fun deleteBookSource(context: RoutingContext): ReturnData {
         val returnData = ReturnData()
         if (!checkAuth(context)) {
             return returnData.setData("NEED_LOGIN").setErrorMsg("请登录后使用")
@@ -270,7 +269,7 @@ class BookSourceController(coroutineContext: CoroutineContext): BaseController(c
         return returnData.setData("")
     }
 
-    suspend fun deleteSources(context: RoutingContext): ReturnData {
+    suspend fun deleteBookSources(context: RoutingContext): ReturnData {
         val returnData = ReturnData()
         if (!checkAuth(context)) {
             return returnData.setData("NEED_LOGIN").setErrorMsg("请登录后使用")
@@ -303,7 +302,7 @@ class BookSourceController(coroutineContext: CoroutineContext): BaseController(c
         return returnData.setData("")
     }
 
-    suspend fun deleteAllSources(context: RoutingContext): ReturnData {
+    suspend fun deleteAllBookSources(context: RoutingContext): ReturnData {
         val returnData = ReturnData()
         if (!checkAuth(context)) {
             return returnData.setData("NEED_LOGIN").setErrorMsg("请登录后使用")
@@ -311,6 +310,25 @@ class BookSourceController(coroutineContext: CoroutineContext): BaseController(c
         var userNameSpace = getUserNameSpace(context)
         saveUserStorage(userNameSpace, "bookSource", JsonArray())
         return returnData.setData("")
+    }
+
+    suspend fun setAsDefaultBookSources(context: RoutingContext): ReturnData {
+        val returnData = ReturnData()
+        if (!checkAuth(context)) {
+            return returnData.setData("NEED_LOGIN").setErrorMsg("请登录后使用")
+        }
+        if (!checkManagerAuth(context)) {
+            return returnData.setData("NEED_SECURE_KEY").setErrorMsg("请输入管理密码")
+        }
+        var username = context.bodyAsJson.getString("username")
+        var bookSourceList: JsonArray? = asJsonArray(getUserStorage(username, "bookSource"))
+        if (bookSourceList == null) {
+            return returnData.setErrorMsg("用户书源不存在")
+        }
+
+        // 保存为默认书源
+        saveUserStorage("default", "bookSource", bookSourceList.getList())
+        return returnData.setData("设置默认书源成功")
     }
 
     suspend fun readSourceFile(context: RoutingContext): ReturnData {
@@ -339,7 +357,6 @@ class BookSourceController(coroutineContext: CoroutineContext): BaseController(c
         } else {
             // get 请求
             url = context.queryParam("url").firstOrNull() ?: ""
-            url = URLDecoder.decode(url, "UTF-8")
         }
         if (url.isNullOrEmpty()) {
             context.success(returnData.setErrorMsg("请输入远程书源链接"))
