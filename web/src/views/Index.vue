@@ -133,7 +133,7 @@
               @click="toDetail(readingRecent)"
               :class="{ 'no-point': readingRecent.bookUrl == '' }"
             >
-              {{ readingRecent.bookName }}
+              {{ readingRecent.name }}
             </el-tag>
           </div>
         </div>
@@ -273,7 +273,7 @@
               type="info"
               :effect="$store.getters.isNight ? 'dark' : 'light'"
               class="setting-btn"
-              @click="showLocalStoreManageDialog = true"
+              @click="showFileManagerDialog('__LOCAL_STORE__', '书仓文件管理')"
               v-if="
                 !$store.state.isSecureMode ||
                   $store.state.userInfo.enableLocalStore
@@ -300,6 +300,12 @@
               v-if="$store.state.isSecureMode && $store.state.userInfo.username"
               @click="logout()"
               >注销</span
+            >
+            <span
+              class="right-text"
+              v-else
+              @click="$store.commit('setShowLogin', true)"
+              >登录</span
             >
           </div>
           <div class="setting-item" v-if="$store.state.showManagerMode">
@@ -342,6 +348,14 @@
               type="info"
               :effect="isNight ? 'dark' : 'light'"
               class="setting-btn"
+              @click="showFileManagerDialog('__HOME__', '用户数据管理')"
+            >
+              用户数据管理
+            </el-tag>
+            <el-tag
+              type="info"
+              :effect="isNight ? 'dark' : 'light'"
+              class="setting-btn"
               @click="loadUserList"
               v-if="$store.state.showManagerMode"
             >
@@ -355,6 +369,15 @@
               @click="showUserManageDialog()"
             >
               管理用户空间
+            </el-tag>
+            <el-tag
+              type="info"
+              :effect="isNight ? 'dark' : 'light'"
+              class="setting-btn"
+              v-if="$store.state.isManagerMode"
+              @click="showFileManagerDialog('__STORAGE__', '数据目录管理')"
+            >
+              数据目录管理
             </el-tag>
             <el-tag
               type="info"
@@ -381,7 +404,7 @@
               type="info"
               :effect="isNight ? 'dark' : 'light'"
               class="setting-btn"
-              @click="showWebDAVManageDialog = true"
+              @click="showFileManagerDialog('__WEBDAV__', 'WebDAV文件管理')"
             >
               文件管理
             </el-tag>
@@ -722,6 +745,12 @@
           <span
             v-if="!isShowFailureBookSource"
             class="float-right span-btn"
+            @click="deleteBookSourceFile()"
+            >恢复默认</span
+          >
+          <span
+            v-if="!isShowFailureBookSource"
+            class="float-right span-btn"
             @click="exportBookSource()"
             >导出</span
           >
@@ -976,21 +1005,12 @@
         >
       </div>
     </el-dialog>
-
-    <LocalStore
-      v-model="showLocalStoreManageDialog"
-      @importFromLocalStorePreview="importMultiBooks"
-    ></LocalStore>
-
-    <WebDAV v-model="showWebDAVManageDialog"></WebDAV>
   </div>
 </template>
 
 <script>
 import { mapGetters } from "vuex";
 import Explore from "../components/Explore.vue";
-import LocalStore from "../components/LocalStore.vue";
-import WebDAV from "../components/WebDAV.vue";
 import Axios from "../plugins/axios";
 import { errorTypeList } from "../plugins/config";
 import { setCache, getCache } from "../plugins/cache";
@@ -1002,9 +1022,7 @@ import Vue from "vue";
 
 export default {
   components: {
-    Explore,
-    LocalStore,
-    WebDAV
+    Explore
   },
   data() {
     return {
@@ -1164,10 +1182,22 @@ export default {
     window.shelfPage = this;
     this.init();
     eventBus.$on("onSourceFileChange", (event, isRssSource) => {
+      if (this._inactive) {
+        return;
+      }
       this.onSourceFileChange(event, isRssSource);
     });
     eventBus.$on("editBook", (book, isAdd, onSuccess) => {
+      if (this._inactive) {
+        return;
+      }
       this.editBook(book, isAdd, onSuccess);
+    });
+    eventBus.$on("importPreview", bookList => {
+      if (this._inactive) {
+        return;
+      }
+      this.importMultiBooks(bookList);
     });
   },
   activated() {
@@ -1449,13 +1479,15 @@ export default {
         // return;
       }
       this.$store.commit("setReadingBook", {
-        bookName: book.bookName || book.name,
+        name: book.name,
         bookUrl: book.bookUrl,
         index: book.index ?? book.durChapterIndex ?? 0,
         type: book.type,
         coverUrl: this.getBookCoverUrl(book),
+        tocUrl: book.tocUrl,
         author: book.author,
         origin: book.origin,
+        originName: book.originName,
         latestChapterTitle: book.latestChapterTitle,
         intro: book.intro
       });
@@ -2115,7 +2147,7 @@ export default {
     },
     async backupToWebdav() {
       const res = await this.$confirm(
-        `确认要用当前书源和书架信息覆盖备份文件中的书源、书架、分组和RSS订阅数据吗?`,
+        `确认要用当前数据覆盖备份文件中的书源、书架、分组、RSS订阅数据、替换规则、书签、用户配置和Webdav书籍吗?`,
         "提示",
         {
           confirmButtonText: "确定",
@@ -2323,6 +2355,7 @@ export default {
         this.$emit("importEnd");
       });
 
+      if (url.indexOf("assets") === -1) return;
       Axios.post(
         this.api + "/deleteFile",
         {
@@ -2411,6 +2444,9 @@ export default {
       this.loadBookGroup(true);
       eventBus.$emit("showBookGroupDialog", false);
     },
+    showFileManagerDialog(home, title) {
+      eventBus.$emit("showFileManagerDialog", home, title);
+    },
     getShowShelfBooks(bookGroup) {
       // 处理特殊分组
       if (bookGroup === -1) {
@@ -2475,13 +2511,36 @@ export default {
         res => {
           if (res.data.isSuccess) {
             //
-            this.loadBookSource(true);
             this.$message.success("清空书源成功");
             this.loadBookSource(true);
           }
         },
         error => {
           this.$message.error("清空书源失败 " + (error && error.toString()));
+        }
+      );
+    },
+    async deleteBookSourceFile() {
+      const res = await this.$confirm(`确认要恢复默认书源吗?`, "提示", {
+        confirmButtonText: "确定",
+        cancelButtonText: "取消",
+        type: "warning"
+      }).catch(() => {
+        return false;
+      });
+      if (!res) {
+        return;
+      }
+      Axios.post(this.api + "/deleteBookSourcesFile").then(
+        res => {
+          if (res.data.isSuccess) {
+            //
+            this.$message.success("恢复默认书源成功");
+            this.loadBookSource(true);
+          }
+        },
+        error => {
+          this.$message.error("操作失败 " + (error && error.toString()));
         }
       );
     },
@@ -2775,11 +2834,11 @@ export default {
       return this.$store.state.connected ? "success" : "danger";
     },
     readingRecent() {
-      return this.$store.state.readingBook &&
-        this.$store.state.readingBook.bookName
-        ? this.$store.state.readingBook
+      return this.$store.getters.readingBook &&
+        this.$store.getters.readingBook.name
+        ? this.$store.getters.readingBook
         : {
-            bookName: "尚无阅读记录",
+            name: "尚无阅读记录",
             bookUrl: "",
             index: 0
           };

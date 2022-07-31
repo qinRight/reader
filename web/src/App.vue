@@ -3,12 +3,15 @@
     <keep-alive>
       <router-view></router-view>
     </keep-alive>
-    <el-dialog
-      title="登录"
-      :visible.sync="showLogin"
-      :width="dialogWidth"
-      :top="dialogTop"
-    >
+    <el-dialog :visible.sync="showLogin" :width="dialogWidth" :top="dialogTop">
+      <div class="custom-dialog-title" slot="title">
+        <span class="el-dialog__title"
+          >{{ isLogin ? "登录" : "注册" }}
+          <span class="float-right span-btn" @click="isLogin = !isLogin">{{
+            isLogin ? "注册" : "登录"
+          }}</span>
+        </span>
+      </div>
       <el-form :model="loginForm">
         <el-form-item label="用户名">
           <el-input v-model="loginForm.username" autocomplete="on"></el-input>
@@ -22,7 +25,7 @@
             @keyup.enter.native="login"
           ></el-input>
         </el-form-item>
-        <el-form-item label="邀请码(没有则不填)">
+        <el-form-item label="邀请码(没有则不填)" v-if="!isLogin">
           <el-input
             v-model="loginForm.code"
             autocomplete="off"
@@ -87,6 +90,25 @@
       v-model="showRssArticleDialog"
       :rssArticleInfo="rssArticleInfo"
     />
+
+    <SearchBookContent
+      v-model="showSearchBookContentDialog"
+      :book="searchBook"
+    />
+
+    <BookmarkForm
+      v-model="showBookmarkForm"
+      :bookmark="bookmark"
+      :isAdd="isAddBookmark"
+    />
+
+    <Bookmark v-model="showBookmarkDialog" :book="bookmarkInBook" />
+
+    <FileManager
+      v-model="showFileManager"
+      :title="fileManagerTitle"
+      :home="fileManagerHome"
+    />
   </div>
 </template>
 
@@ -105,10 +127,15 @@ import BookGroup from "./components/BookGroup.vue";
 import RssSourceList from "./components/RssSourceList.vue";
 import RssArticleList from "./components/RssArticleList.vue";
 import RssArticle from "./components/RssArticle.vue";
+import SearchBookContent from "./components/SearchBookContent.vue";
+import Bookmark from "./components/Bookmark.vue";
+import BookmarkForm from "./components/BookmarkForm.vue";
+import FileManager from "./components/FileManager.vue";
 import { CodeJar } from "codejar";
 import Prism from "prismjs";
 import "prismjs/components/prism-json";
 import "prismjs/themes/prism.css";
+import "./assets/fonts/iconfont.css";
 import {
   cacheFirstRequest,
   isMiniInterface,
@@ -179,7 +206,11 @@ export default {
     BookGroup,
     RssSourceList,
     RssArticleList,
-    RssArticle
+    RssArticle,
+    SearchBookContent,
+    Bookmark,
+    BookmarkForm,
+    FileManager
   },
   data() {
     return {
@@ -215,7 +246,23 @@ export default {
       showRssArticleListDialog: false,
       rssSource: {},
       showRssArticleDialog: false,
-      rssArticleInfo: {}
+      rssArticleInfo: {},
+
+      showSearchBookContentDialog: false,
+      searchBook: {},
+
+      isLogin: true,
+
+      showBookmarkDialog: false,
+
+      showBookmarkForm: false,
+      bookmark: {},
+      isAddBookmark: true,
+      bookmarkInBook: {},
+
+      showFileManager: false,
+      fileManagerHome: "",
+      fileManagerTitle: "文件管理"
     };
   },
   beforeCreate() {
@@ -331,6 +378,25 @@ export default {
       this.showRssArticleDialog = true;
       this.rssArticleInfo = rssArticleInfo;
     });
+    eventBus.$on("showSearchBookContentDialog", searchBook => {
+      this.showSearchBookContentDialog = true;
+      this.searchBook = searchBook;
+    });
+    eventBus.$on("showBookmarkForm", (bookmark, isAddBookmark, callback) => {
+      this.bookmark = bookmark;
+      this.isAddBookmark = isAddBookmark;
+      this.bookmarkCallback = callback;
+      this.showBookmarkForm = true;
+    });
+    eventBus.$on("showBookmarkDialog", book => {
+      this.showBookmarkDialog = true;
+      this.bookmarkInBook = book;
+    });
+    eventBus.$on("showFileManagerDialog", (home, title) => {
+      this.fileManagerHome = home;
+      this.fileManagerTitle = title;
+      this.showFileManager = true;
+    });
   },
   mounted() {
     document.documentElement.style.setProperty(
@@ -401,6 +467,19 @@ export default {
           this.replaceRuleCallback = null;
         }
       }
+    },
+    showBookmarkForm(val) {
+      if (!val) {
+        if (this.bookmarkCallback) {
+          this.bookmarkCallback();
+          this.bookmarkCallback = null;
+        }
+      }
+    },
+    showLogin(val) {
+      if (!val) {
+        this.isLogin = true;
+      }
     }
   },
   methods: {
@@ -460,7 +539,10 @@ export default {
       };
     },
     async login() {
-      const res = await Axios.post("/login", this.loginForm);
+      const res = await Axios.post("/login", {
+        ...this.loginForm,
+        isLogin: this.isLogin
+      });
       if (res.data.isSuccess) {
         this.$store.commit("setShowLogin", false);
         this.$nextTick(() => {
@@ -497,7 +579,9 @@ export default {
         // 加载RSS订阅列表
         this.loadRssSources(refresh),
         // 加载替换规则
-        this.loadReplaceRules(refresh)
+        this.loadReplaceRules(refresh),
+        // 加载书签
+        this.loadBookmarks(refresh)
       ]);
       // 加载书架
       this.initing = false;
@@ -656,6 +740,22 @@ export default {
         }
       );
     },
+    loadBookmarks(refresh) {
+      return cacheFirstRequest(
+        () => Axios.get(this.api + "/getBookmarks"),
+        "bookmark@" + this.currentUserName,
+        refresh
+      ).then(
+        res => {
+          if (res.data.isSuccess) {
+            this.$store.commit("setBookmarks", res.data.data || []);
+          }
+        },
+        error => {
+          this.$message.error("加载书签失败 " + (error && error.toString()));
+        }
+      );
+    },
     async isInShelf(book, addTip) {
       if (!book || !book.bookUrl || !book.origin) {
         this.$message.error("书籍信息错误");
@@ -695,9 +795,9 @@ export default {
     },
     getBookContent(chapterIndex, options, refresh, cache, book) {
       book = book || {
-        name: this.$store.state.readingBook.bookName,
-        author: this.$store.state.readingBook.author,
-        bookUrl: this.$store.state.readingBook.bookUrl
+        name: this.$store.getters.readingBook.name,
+        author: this.$store.getters.readingBook.author,
+        bookUrl: this.$store.getters.readingBook.bookUrl
       };
       const params = {
         url: book.bookUrl,

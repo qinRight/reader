@@ -31,6 +31,17 @@ fun String.url(): String {
     return this
 }
 
+fun String.toDir(absolute: Boolean = false): String {
+    var path = this
+    if (path.endsWith("/")) {
+        path = path.substring(0, path.length - 1)
+    }
+    if (absolute && !path.startsWith("/")) {
+        path = "/" + path
+    }
+    return path
+}
+
 fun WebClient.getEncodeAbs(absoluteURI: String): HttpRequest<Buffer> {
     return this.getAbs(absoluteURI.toHttpUrl().toString())
 }
@@ -133,6 +144,7 @@ fun zip(files: List<File>, zipFilePath: String): Boolean {
 }
 
 fun createDir(filePath: String): File {
+    logger.debug("createDir filePath {}", filePath)
     val file = File(filePath)
     if (!file.exists()) {
         file.mkdirs()
@@ -141,6 +153,7 @@ fun createDir(filePath: String): File {
 }
 
 fun createFile(filePath: String): File {
+    logger.debug("createFile filePath {}", filePath)
     val file = File(filePath)
     val parentFile = file.parentFile!!
     if (!parentFile.exists()) {
